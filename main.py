@@ -4,7 +4,7 @@ import cPickle
 from random import randint
 import os
 from scipy.misc import imsave
-import utils
+from utils import batch_norm
 
 
 
@@ -45,12 +45,16 @@ def discriminator(imagein):
 
     d_fcbias1 = initBias([1],"d_fcbias1")
 
+    d_bn1 = batch_norm(name='d_bn1')
+    d_bn2 = batch_norm(name='d_bn2')
+    d_bn3 = batch_norm(name='d_bn3')
+
     conv1 = tf.nn.conv2d(imagein,d_convweight1,strides=[1,1,1,1],padding="SAME")
-    relu1 = tf.nn.relu(conv1 + d_convbias1)
+    relu1 = tf.nn.relu(d_bn1(conv1 + d_convbias1))
     conv2 = tf.nn.conv2d(relu1,d_convweight2,strides=[1,2,2,1],padding="SAME") #32x32 -> 16x16
-    relu2 = tf.nn.relu(conv2 + d_convbias2)
+    relu2 = tf.nn.relu(d_bn2(conv2 + d_convbias2))
     conv3 = tf.nn.conv2d(relu2,d_convweight3,strides=[1,2,2,1],padding="SAME") #16x16 -> 8x8
-    relu3 = tf.nn.relu(conv3 + d_convbias3)
+    relu3 = tf.nn.relu(d_bn3(conv3 + d_convbias3))
     dropout1 = tf.nn.dropout(relu3,droprate)
     flattened = tf.reshape(dropout1, [-1, 8*8*128])
     fc1 = tf.matmul(flattened, d_fcweight1) + d_fcbias1
@@ -69,14 +73,18 @@ def generator():
     g_convbias2 = initBias([128],"g_convbias2")
     g_convbias3 = initBias([3],"g_convbias3")
 
+    g_bn1 = batch_norm(name='g_bn1')
+    g_bn2 = batch_norm(name='g_bn2')
+    g_bn3 = batch_norm(name='g_bn3')
+
     noise = tf.random_uniform([batchsize, 100], -1, 1)
     fc1 = tf.matmul(noise, g_fcweight1)
     relu1 = tf.nn.relu(fc1 + g_fcbias1)
-    fattened = tf.reshape(relu1,[batchsize, 4, 4, 512])
+    fattened = g_bn1(tf.reshape(relu1,[batchsize, 4, 4, 512]))
     convt1 = tf.nn.conv2d_transpose(fattened, g_convweight1, [batchsize, 8, 8, 256], [1,2,2,1])
-    relu2 = tf.nn.relu(convt1 + g_convbias1)
+    relu2 = tf.nn.relu(g_bn2(convt1 + g_convbias1))
     convt2 = tf.nn.conv2d_transpose(relu2, g_convweight2, [batchsize, 16, 16, 128], [1,2,2,1])
-    relu3 = tf.nn.relu(convt2 + g_convbias2)
+    relu3 = tf.nn.relu(g_bn3(convt2 + g_convbias2))
     convt3 = tf.nn.conv2d_transpose(relu3, g_convweight3, [batchsize, 32, 32, 3], [1,2,2,1])
     sigmoid1 = tf.nn.sigmoid(convt3 + g_convbias3)
     return sigmoid1;
