@@ -10,7 +10,7 @@ import utils
 
 batchsize = 50
 droprate = 0.9
-iterations = 1000
+iterations = 10000
 updates = 2
 d_learnrate = 0.0002
 g_learnrate = 0.0002
@@ -41,11 +41,9 @@ def discriminator(imagein):
     d_convbias2 = initBias([64],"d_convbias2")
     d_convbias3 = initBias([128],"d_convbias3")
 
-    d_fcweight1 = initWeight([8*8*128, 1024],"d_fcweight1")
-    d_fcweight2 = initWeight([1024, 1],"d_fcweight2")
+    d_fcweight1 = initWeight([8*8*128, 1],"d_fcweight1")
 
-    d_fcbias1 = initBias([1024],"d_fcbias1")
-    d_fcbias2 = initBias([1],"d_fcbias2")
+    d_fcbias1 = initBias([1],"d_fcbias1")
 
     conv1 = tf.nn.conv2d(imagein,d_convweight1,strides=[1,1,1,1],padding="SAME")
     relu1 = tf.nn.relu(conv1 + d_convbias1)
@@ -55,12 +53,9 @@ def discriminator(imagein):
     relu3 = tf.nn.relu(conv3 + d_convbias3)
     dropout1 = tf.nn.dropout(relu3,droprate)
     flattened = tf.reshape(dropout1, [-1, 8*8*128])
-    fc1 = tf.matmul(flattened, d_fcweight1)
-    relu4 = tf.nn.relu(fc1 + d_fcbias1)
-    fc2 = tf.matmul(relu4, d_fcweight2)
-    relu5 = tf.nn.relu(fc2 + d_fcbias2)
-    y = tf.nn.sigmoid(relu5)
-    return y, relu5
+    fc1 = tf.matmul(flattened, d_fcweight1) + d_fcbias1
+    y = tf.nn.sigmoid(fc1)
+    return y, fc1
 
 def generator():
     g_fcweight1 = initWeight([100, 4*4*512],"g_fcweight1")
@@ -83,8 +78,8 @@ def generator():
     convt2 = tf.nn.conv2d_transpose(relu2, g_convweight2, [batchsize, 16, 16, 128], [1,2,2,1])
     relu3 = tf.nn.relu(convt2 + g_convbias2)
     convt3 = tf.nn.conv2d_transpose(relu3, g_convweight3, [batchsize, 32, 32, 3], [1,2,2,1])
-    tanh1 = tf.nn.tanh(convt3 + g_convbias3)
-    return tanh1;
+    sigmoid1 = tf.nn.sigmoid(convt3 + g_convbias3)
+    return sigmoid1;
 
 
 
@@ -110,14 +105,17 @@ def train(mode):
     params = tf.trainable_variables()
     d_params = [var for var in params if 'd_' in var.name]
     g_params = [var for var in params if 'g_' in var.name]
+    print "params are"
+    print [var.name for var in d_params]
 
-    d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(preal, tf.ones_like(preal)))
-    d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(pfake, tf.zeros_like(pfake)))
-    gloss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(pfake, tf.ones_like(pfake)))
+    d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(hreal, tf.ones_like(hreal)))
+    d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(hfake, tf.zeros_like(hfake)))
+    gloss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(hfake, tf.ones_like(hfake)))
     dloss = d_loss_real + d_loss_fake
 
 
-    # dloss = tf.reduce_mean(tf.nn.relu(d1) - d1 + tf.log(1.0 + tf.exp(-tf.abs(d1)))) + tf.reduce_mean(tf.nn.relu(d2) + tf.log(1.0 + tf.exp(-tf.abs(d2))))
+    # d_loss_real2 = tf.reduce_mean(tf.nn.relu(preal) - preal + tf.log(1.0 + tf.exp(-tf.abs(preal))))
+    # d_loss_fake2 = tf.reduce_mean(tf.nn.relu(pfake) + tf.log(1.0 + tf.exp(-tf.abs(pfake))))
     # gloss = tf.reduce_mean(tf.nn.relu(d2) - d2 + tf.log(1.0 + tf.exp(-tf.abs(d2))))
 
     doptimizer = tf.train.AdamOptimizer(d_learnrate, beta1=beta).minimize(dloss, var_list=d_params)
@@ -131,8 +129,6 @@ def train(mode):
 
         if mode == "train":
             for i in xrange(iterations):
-                dloss = 0
-                gloss = 0
                 for k in xrange(updates):
                     randomint = randint(0,10000 - batchsize - 1)
                     trainingData = batch["data"][randomint:batchsize+randomint]
@@ -144,14 +140,15 @@ def train(mode):
 
                     doptimizer.run(feed_dict= {imagein: trainingData})
 
-                    if i % 10 == 0:
-                        print dloss.eval(feed_dict= {imagein: trainingData})
+                    if i % 50 == 0:
+                        dd = dloss.eval(feed_dict= {imagein: trainingData})
+                        print dd
                     # dloss += dloss_delta
                     if k % 100 == 0:
-                        print k
+                        print i
 
-                # goptimizer.run()
-                print "i: " + str(i)
+                goptimizer.run()
+                # print "i: " + str(i)
 
 
 
