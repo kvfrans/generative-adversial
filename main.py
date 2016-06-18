@@ -8,7 +8,7 @@ from random import randint
 batchsize = 50
 droprate = 0.9
 iterations = 100
-updates = 10
+updates = 1000
 
 
 # extracting data
@@ -118,6 +118,8 @@ def train():
     doptimizer = tf.train.AdamOptimizer(0.001).minimize(dloss, var_list=d_params)
     goptimizer = tf.train.AdamOptimizer(0.001).minimize(gloss, var_list=g_params)
 
+    saver = tf.train.Saver()
+
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
         for i in xrange(iterations):
@@ -138,6 +140,7 @@ def train():
 
             goptimizer.run()
             print "i: " + str(k)
+            saver.save(sess, os.getcwd()+"/training/train", global_step=i)
             # _, gloss_delta = goptimizer.run()
             # gloss += gloss_delta
 
