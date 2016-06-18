@@ -4,6 +4,7 @@ import cPickle
 from random import randint
 import os
 from scipy.misc import imsave
+import utils
 
 
 
@@ -11,8 +12,9 @@ batchsize = 50
 droprate = 0.9
 iterations = 1000
 updates = 10
-d_learnrate = 1e-3
-g_learnrate = 1e-3
+d_learnrate = 0.0002
+g_learnrate = 0.0002
+beta = 0.5
 
 
 # extracting data
@@ -23,34 +25,27 @@ def unpickle(file):
   return dict
 
 # helper functions for defining the model
-def initWeight(shape):
-    weights = tf.truncated_normal(shape,stddev=0.05)
-    return tf.Variable(weights)
+def initWeight(shape, name):
+    return tf.get_variable(name,shape,initializer=tf.random_normal_initializer(stddev=0.05))
 # start with 0.1 so reLu isnt always 0
-def initBias(shape):
-    bias = tf.constant(0.1,shape=shape)
-    return tf.Variable(bias)
-# the convolution with padding of 1 on each side, and moves by 1.
-def conv2d(x,W):
-    return tf.nn.conv2d(x,W,strides=[1,1,1,1],padding="SAME")
-# max pooling basically shrinks it by 2x, taking the highest value on each feature.
-def maxPool2d(x):
-    return tf.nn.max_pool(x,ksize=[1,2,2,1],strides=[1,2,2,1],padding="SAME")
+def initBias(shape, name):
+    return tf.get_variable(name,shape,initializer=tf.constant_initializer(0.1))
+
 
 def discriminator(imagein):
-    d_convweight1 = initWeight([5,5,3,32])
-    d_convweight2 = initWeight([5,5,32,64])
-    d_convweight3 = initWeight([5,5,64,128])
+    d_convweight1 = initWeight([5,5,3,32],"d_convweight1")
+    d_convweight2 = initWeight([5,5,32,64],"d_convweight2")
+    d_convweight3 = initWeight([5,5,64,128],"d_convweight3")
 
-    d_convbias1 = initBias([32])
-    d_convbias2 = initBias([64])
-    d_convbias3 = initBias([128])
+    d_convbias1 = initBias([32],"d_convbias1")
+    d_convbias2 = initBias([64],"d_convbias2")
+    d_convbias3 = initBias([128],"d_convbias3")
 
-    d_fcweight1 = initWeight([8*8*128, 1024])
-    d_fcweight2 = initWeight([1024, 1])
+    d_fcweight1 = initWeight([8*8*128, 1024],"d_fcweight1")
+    d_fcweight2 = initWeight([1024, 1],"d_fcweight2")
 
-    d_fcbias1 = initBias([1024])
-    d_fcbias2 = initBias([1])
+    d_fcbias1 = initBias([1024],"d_fcbias1")
+    d_fcbias2 = initBias([1],"d_fcbias2")
 
     conv1 = tf.nn.conv2d(imagein,d_convweight1,strides=[1,1,1,1],padding="SAME")
     relu1 = tf.nn.relu(conv1 + d_convbias1)
@@ -64,19 +59,20 @@ def discriminator(imagein):
     relu4 = tf.nn.relu(fc1 + d_fcbias1)
     fc2 = tf.matmul(relu4, d_fcweight2)
     relu5 = tf.nn.relu(fc2 + d_fcbias2)
-    return relu5;
+    y = tf.nn.sigmoid(relu5)
+    return y, relu5
 
 def generator():
-    g_fcweight1 = initWeight([100, 4*4*512])
-    g_fcbias1 = initBias([4*4*512])
+    g_fcweight1 = initWeight([100, 4*4*512],"g_fcweight1")
+    g_fcbias1 = initBias([4*4*512],"g_fcbias1")
 
-    g_convweight1 = initWeight([5,5,256,512])
-    g_convweight2 = initWeight([5,5,128,256])
-    g_convweight3 = initWeight([5,5,3,128])
+    g_convweight1 = initWeight([5,5,256,512],"g_convweight1")
+    g_convweight2 = initWeight([5,5,128,256],"g_convweight2")
+    g_convweight3 = initWeight([5,5,3,128],"g_convweight3")
 
-    g_convbias1 = initBias([256])
-    g_convbias2 = initBias([128])
-    g_convbias3 = initBias([3])
+    g_convbias1 = initBias([256],"g_convbias1")
+    g_convbias2 = initBias([128],"g_convbias2")
+    g_convbias3 = initBias([3],"g_convbias3")
 
     noise = tf.random_uniform([batchsize, 100], -1, 1)
     fc1 = tf.matmul(noise, g_fcweight1)
@@ -87,8 +83,8 @@ def generator():
     convt2 = tf.nn.conv2d_transpose(relu2, g_convweight2, [batchsize, 16, 16, 128], [1,2,2,1])
     relu3 = tf.nn.relu(convt2 + g_convbias2)
     convt3 = tf.nn.conv2d_transpose(relu3, g_convweight3, [batchsize, 32, 32, 3], [1,2,2,1])
-    relu4 = tf.nn.relu(convt3 + g_convbias3)
-    return relu4;
+    tanh1 = tf.nn.tanh(convt3 + g_convbias3)
+    return tanh1;
 
 
 
@@ -101,35 +97,39 @@ def train(mode):
 
     imagein = tf.placeholder("float",[batchsize,32,32,3])
 
-    # discriminator called on real data
-    d1 = discriminator(imagein)
-    # keep track of which variables are for D and which are for G
-    d_paramsnum = len(tf.trainable_variables())
-
-    # discriminator called on generated images
-    g = generator()
-    d2 = discriminator(g)
+    with tf.variable_scope("model"):
+        # discriminator called on real data
+        preal, hreal = discriminator(imagein)
+        # discriminator called on generated images
+        g = generator()
+    # want to reuse same discriminator variables
+    with tf.variable_scope("model", reuse=True):
+        pfake, hfake = discriminator(g)
 
     # parameters to train on for each respective update
     params = tf.trainable_variables()
-    d_params = params[:d_paramsnum]
-    g_params = params[d_paramsnum:]
+    d_params = [var for var in params if 'd_' in var.name]
+    g_params = [var for var in params if 'g_' in var.name]
+
+    d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(preal, tf.ones_like(preal)))
+    d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(pfake, tf.zeros_like(pfake)))
+    gloss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(pfake, tf.ones_like(pfake)))
+    dloss = d_loss_real + d_loss_fake
 
 
-    dloss = tf.reduce_mean(tf.nn.relu(d1) - d1 + tf.log(1.0 + tf.exp(-tf.abs(d1)))) + tf.reduce_mean(tf.nn.relu(d2) + tf.log(1.0 + tf.exp(-tf.abs(d2))))
-    gloss = tf.reduce_mean(tf.nn.relu(d2) - d2 + tf.log(1.0 + tf.exp(-tf.abs(d2))))
+    # dloss = tf.reduce_mean(tf.nn.relu(d1) - d1 + tf.log(1.0 + tf.exp(-tf.abs(d1)))) + tf.reduce_mean(tf.nn.relu(d2) + tf.log(1.0 + tf.exp(-tf.abs(d2))))
+    # gloss = tf.reduce_mean(tf.nn.relu(d2) - d2 + tf.log(1.0 + tf.exp(-tf.abs(d2))))
 
-    doptimizer = tf.train.AdamOptimizer(d_learnrate).minimize(dloss, var_list=d_params)
-    goptimizer = tf.train.AdamOptimizer(g_learnrate).minimize(gloss, var_list=g_params)
+    doptimizer = tf.train.AdamOptimizer(d_learnrate, beta1=beta).minimize(dloss, var_list=d_params)
+    goptimizer = tf.train.AdamOptimizer(g_learnrate, beta1=beta).minimize(gloss, var_list=g_params)
 
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(max_to_keep=10)
 
 
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
-        # saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
 
-        if mode:
+        if mode == "train":
             for i in xrange(iterations):
                 dloss = 0
                 gloss = 0
@@ -157,6 +157,7 @@ def train(mode):
                 # _, gloss_delta = goptimizer.run()
                 # gloss += gloss_delta
         else:
+            saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
             data = g.eval()
             imsave(str(i)+".jpg",data)
 
@@ -176,4 +177,4 @@ def train(mode):
 
 # display()
 
-train(True)
+train("train")
