@@ -2,15 +2,17 @@ import tensorflow as tf
 import numpy as np
 import cPickle
 from random import randint
+import os
+from scipy.misc import imsave
 
 
 
 batchsize = 50
 droprate = 0.9
-iterations = 100
-updates = 1000
+iterations = 1000
+updates = 10
 d_learnrate = 1e-3
-g_learnrate = 1e-2
+g_learnrate = 1e-3
 
 
 # extracting data
@@ -45,10 +47,10 @@ def discriminator(imagein):
     d_convbias3 = initBias([128])
 
     d_fcweight1 = initWeight([8*8*128, 1024])
-    d_fcweight2 = initWeight([1024, 1024])
+    d_fcweight2 = initWeight([1024, 1])
 
     d_fcbias1 = initBias([1024])
-    d_fcbias2 = initBias([1024])
+    d_fcbias2 = initBias([1])
 
     conv1 = tf.nn.conv2d(imagein,d_convweight1,strides=[1,1,1,1],padding="SAME")
     relu1 = tf.nn.relu(conv1 + d_convbias1)
@@ -91,7 +93,7 @@ def generator():
 
 
 
-def train():
+def train(mode):
 
     # prepare real data
     batch = unpickle("cifar-10-batches-py/data_batch_1")
@@ -122,37 +124,56 @@ def train():
 
     saver = tf.train.Saver()
 
+
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
-        for i in xrange(iterations):
-            dloss = 0
-            gloss = 0
-            for k in xrange(updates):
-                randomint = randint(0,10000 - batchsize - 1)
-                trainingData = batch["data"][randomint:batchsize+randomint]
-                rawlabel = batch["labels"][randomint:batchsize+randomint]
-                trainingLabel = np.zeros((batchsize,10))
-                trainingLabel[np.arange(batchsize),rawlabel] = 1
-                trainingData = trainingData/255.0
-                trainingData = np.reshape(trainingData,(batchsize,32,32,3))
+        # saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
 
-                doptimizer.run(feed_dict= {imagein: trainingData})
-                # dloss += dloss_delta
-                print k
+        if mode:
+            for i in xrange(iterations):
+                dloss = 0
+                gloss = 0
+                for k in xrange(updates):
+                    randomint = randint(0,10000 - batchsize - 1)
+                    trainingData = batch["data"][randomint:batchsize+randomint]
+                    rawlabel = batch["labels"][randomint:batchsize+randomint]
+                    trainingLabel = np.zeros((batchsize,10))
+                    trainingLabel[np.arange(batchsize),rawlabel] = 1
+                    trainingData = trainingData/255.0
+                    trainingData = np.reshape(trainingData,(batchsize,32,32,3))
 
-            goptimizer.run()
-            print "i: " + str(k)
-            saver.save(sess, os.getcwd()+"/training/train", global_step=i)
-            # _, gloss_delta = goptimizer.run()
-            # gloss += gloss_delta
+                    doptimizer.run(feed_dict= {imagein: trainingData})
+                    # dloss += dloss_delta
+                    if k % 100 == 0:
+                        print k
+
+                goptimizer.run()
+                print "i: " + str(i)
+
+                if i % 100 == 0:
+                    saver.save(sess, os.getcwd()+"/training/train", global_step=i)
+                    data = g.eval()
+                    imsave(str(i)+".jpg",data[0])
+                # _, gloss_delta = goptimizer.run()
+                # gloss += gloss_delta
+        else:
+            data = g.eval()
+            imsave(str(i)+".jpg",data)
+
+
+
+#
+# def display():
+#     sess = tf.InteractiveSession()
+#     sess.run(tf.initialize_all_variables())
+#     g = generator()
+#     d2 = discriminator(g)
+#     saver = tf.train.Saver()
+#     saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
 
 
 
 
+# display()
 
-
-
-
-
-
-train()
+train(True)
