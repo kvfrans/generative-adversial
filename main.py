@@ -9,6 +9,8 @@ batchsize = 50
 droprate = 0.9
 iterations = 100
 updates = 1000
+d_learnrate = 1e-3
+g_learnrate = 1e-2
 
 
 # extracting data
@@ -115,8 +117,8 @@ def train():
     dloss = tf.reduce_mean(tf.nn.relu(d1) - d1 + tf.log(1.0 + tf.exp(-tf.abs(d1)))) + tf.reduce_mean(tf.nn.relu(d2) + tf.log(1.0 + tf.exp(-tf.abs(d2))))
     gloss = tf.reduce_mean(tf.nn.relu(d2) - d2 + tf.log(1.0 + tf.exp(-tf.abs(d2))))
 
-    doptimizer = tf.train.AdamOptimizer(0.001).minimize(dloss, var_list=d_params)
-    goptimizer = tf.train.AdamOptimizer(0.001).minimize(gloss, var_list=g_params)
+    doptimizer = tf.train.AdamOptimizer(d_learnrate).minimize(dloss, var_list=d_params)
+    goptimizer = tf.train.AdamOptimizer(g_learnrate).minimize(gloss, var_list=g_params)
 
     saver = tf.train.Saver()
 
