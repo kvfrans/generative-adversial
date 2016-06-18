@@ -11,7 +11,7 @@ import utils
 batchsize = 50
 droprate = 0.9
 iterations = 1000
-updates = 10
+updates = 2
 d_learnrate = 0.0002
 g_learnrate = 0.0002
 beta = 0.5
@@ -143,12 +143,17 @@ def train(mode):
                     trainingData = np.reshape(trainingData,(batchsize,32,32,3))
 
                     doptimizer.run(feed_dict= {imagein: trainingData})
+
+                    if i % 10 == 0:
+                        print dloss.eval(feed_dict= {imagein: trainingData})
                     # dloss += dloss_delta
                     if k % 100 == 0:
                         print k
 
-                goptimizer.run()
+                # goptimizer.run()
                 print "i: " + str(i)
+
+
 
                 if i % 100 == 0:
                     saver.save(sess, os.getcwd()+"/training/train", global_step=i)
