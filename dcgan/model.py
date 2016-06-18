@@ -2,6 +2,7 @@ import os
 import time
 from glob import glob
 import tensorflow as tf
+from scipy.misc import imsave
 from random import randint
 
 
@@ -138,13 +139,8 @@ class DCGAN(object):
                         time.time() - start_time, errD_fake+errD_real, errG))
 
                 if np.mod(counter, 30) == 1:
-                    samples, d_loss, g_loss = self.sess.run(
-                        [self.G, self.d_loss, self.g_loss],
-                        feed_dict={self.z: batch_z, self.images: trainingData}
-                    )
-                    save_images(samples, [8, 8],
-                                './samples/train_%s_%s.png' % (epoch, idx))
-                    print("[Sample] d_loss: %.8f, g_loss: %.8f" % (d_loss, g_loss))
+                    data = self.sess.run([self.G],feed_dict={ self.z: batch_z })
+                    imsave(str(i)+".jpg",data)
 
                 if np.mod(counter, 500) == 2:
                     self.save(config.checkpoint_dir, counter)
@@ -180,23 +176,6 @@ class DCGAN(object):
 
         return tf.nn.tanh(h3)
 
-    def sampler(self, z, y=None):
-        tf.get_variable_scope().reuse_variables()
-
-        # project `z` and reshape
-        h0 = tf.reshape(linear(z, self.gf_dim*8*4*4, 'g_h0_lin'),
-                        [-1, 4, 4, self.gf_dim * 8])
-        h0 = tf.nn.relu(self.g_bn0(h0, train=False))
-
-        h1 = deconv2d(h0, [self.batch_size, 8, 8, self.gf_dim*4], name='g_h1')
-        h1 = tf.nn.relu(self.g_bn1(h1, train=False))
-
-        h2 = deconv2d(h1, [self.batch_size, 16, 16, self.gf_dim*2], name='g_h2')
-        h2 = tf.nn.relu(self.g_bn2(h2, train=False))
-
-        h3 = deconv2d(h2, [self.batch_size, 32, 32, self.gf_dim*1], name='g_h3')
-
-        return tf.nn.tanh(h3)
 
     def save(self, checkpoint_dir, step):
         model_name = "DCGAN.model"
