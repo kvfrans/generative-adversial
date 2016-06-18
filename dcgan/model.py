@@ -139,8 +139,8 @@ class DCGAN(object):
 
                 if np.mod(counter, 30) == 1:
                     samples, d_loss, g_loss = self.sess.run(
-                        [self.sampler, self.d_loss, self.g_loss],
-                        feed_dict={self.z: sample_z, self.images: sample_images}
+                        [self.G, self.d_loss, self.g_loss],
+                        feed_dict={self.z: batch_z, self.images: trainingData}
                     )
                     save_images(samples, [8, 8],
                                 './samples/train_%s_%s.png' % (epoch, idx))
