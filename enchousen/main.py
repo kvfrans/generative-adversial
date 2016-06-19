@@ -5,6 +5,7 @@ from utils import *
 import os
 import time
 from glob import glob
+from scipy.misc import imsave as ims
 
 def discriminator(image, reuse=False):
     if reuse:
@@ -80,20 +81,27 @@ with tf.Session() as sess:
         data = glob(os.path.join("./data",dataset, "*.jpg"))
         batch_idx = len(data)
         for idx in xrange(batch_idx):
-            batch_files = data[idx*config.batch_size:(idx+1)*config.batch_size]
+            batch_files = data[idx*batchsize:(idx+1)*batchsize]
             batch = [get_image(batch_file, imagesize, is_crop=iscrop) for batch_file in batch_files]
             batch_images = np.array(batch).astype(np.float32)
 
             batch_z = np.random.uniform(-1, 1, [batchsize, z_dim]).astype(np.float32)
-            sess.run([d_optim],feed_dict={ self.images: batch_images, self.z: batch_z })
-            sess.run([g_optim],feed_dict={ self.z: batch_z })
-            sess.run([g_optim],feed_dict={ self.z: batch_z })
 
-            errD_fake = self.d_loss_fake.eval({self.z: batch_z})
-            errD_real = self.d_loss_real.eval({self.images: batch_images})
-            errG = self.g_loss.eval({self.z: batch_z})
+            for k in xrange(5):
+                sess.run([d_optim],feed_dict={ images: batch_images, zin: batch_z })
+            for k in xrange(1):
+                sess.run([g_optim],feed_dict={ zin: batch_z })
+
+            errD_fake = d_loss_fake.eval({zin: batch_z})
+            errD_real = d_loss_real.eval({images: batch_images})
+            errG = gloss.eval({zin: batch_z})
 
             counter += 1
             print("Epoch: [%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
-                % (epoch, idx, batch_idxs,
+                % (epoch, idx, batch_idx,
                     time.time() - start_time, errD_fake+errD_real, errG))
+
+            if counter % 10 == 0:
+                sdata = sess.run([G],feed_dict={ zin: batch_z })
+                print np.shape(sdata)
+                ims("face-5-1/"+str(counter)+".jpg",merge(sdata[0],[8,8]))
