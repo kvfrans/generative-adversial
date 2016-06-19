@@ -22,3 +22,6 @@ def center_crop(x, crop_h, crop_w=None, resize_w=64):
     i = int(round((w - crop_w)/2.))
     return scipy.misc.imresize(x[j:j+crop_h, i:i+crop_w],
                                [resize_w, resize_w])
+
+def imread(path):
+    return scipy.misc.imread(path).astype(np.float)
