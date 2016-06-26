@@ -155,4 +155,4 @@ with tf.Session() as sess:
             edited = np.copy(batch_z)
             edited[:,i] = (np.arange(0.0, batchsize) / (batchsize/2)) - 1
             sdata = sess.run([G],feed_dict={ zin: edited })
-            ims("ztests/"+str(i)+".jpg",merge(sdata[0],[8,8]))
+            ims("results/imagenet/"+str(i)+".jpg",merge(sdata[0],[8,8]))
