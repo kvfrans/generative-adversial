@@ -1,34 +1,45 @@
-import tensorflow as tf
+import scipy.misc
 import numpy as np
+import random
+import tensorflow as tf
+import cPickle
 
-class batch_norm(object):
-    """Code modification of http://stackoverflow.com/a/33950177"""
-    def __init__(self, epsilon=1e-5, momentum = 0.9, name="batch_norm"):
-        self.epsilon = epsilon
-        self.momentum = momentum
+def get_image(image_path, image_size, is_crop=True):
+    return transform(imread(image_path), image_size, is_crop)
 
-        self.ema = tf.train.ExponentialMovingAverage(decay=self.momentum)
-        self.name = name
+def transform(image, npx=64, is_crop=True):
+    # npx : # of pixels width/height of image
+    if is_crop:
+        cropped_image = center_crop(image, npx)
+    else:
+        cropped_image = image
+    return np.array(cropped_image)/127.5 - 1.
 
-    def __call__(self, x, train=True):
-        shape = x.get_shape().as_list()
+def center_crop(x, crop_h, crop_w=None, resize_w=64):
+    if crop_w is None:
+        crop_w = crop_h
+    h, w = x.shape[:2]
+    j = int(round((h - crop_h)/2.))
+    i = int(round((w - crop_w)/2.))
+    return scipy.misc.imresize(x[j:j+crop_h, i:i+crop_w],
+                               [resize_w, resize_w])
 
-        if train:
-            self.beta = tf.get_variable(self.name+"beta", [shape[-1]],
-                                initializer=tf.constant_initializer(0.))
-            self.gamma = tf.get_variable(self.name+"gamma", [shape[-1]],
-                                initializer=tf.random_normal_initializer(1., 0.02))
+def imread(path):
+    return scipy.misc.imread(path).astype(np.float)
 
-            batch_mean, batch_var = tf.nn.moments(x, [0, 1, 2], name='moments')
-            ema_apply_op = self.ema.apply([batch_mean, batch_var])
-            self.ema_mean, self.ema_var = self.ema.average(batch_mean), self.ema.average(batch_var)
+def merge(images, size):
+    h, w = images.shape[1], images.shape[2]
+    img = np.zeros((h * size[0], w * size[1], 3))
 
-            with tf.control_dependencies([ema_apply_op]):
-                mean, var = tf.identity(batch_mean), tf.identity(batch_var)
-        else:
-            mean, var = self.ema_mean, self.ema_var
+    for idx, image in enumerate(images):
+        i = idx % size[1]
+        j = idx / size[1]
+        img[j*h:j*h+h, i*w:i*w+w, :] = image
 
-        normed = tf.nn.batch_norm_with_global_normalization(
-                x, mean, var, self.beta, self.gamma, self.epsilon, scale_after_normalization=True)
+    return img
 
-        return normed
+def unpickle(file):
+  fo = open(file, 'rb')
+  dict = cPickle.load(fo)
+  fo.close()
+  return dict

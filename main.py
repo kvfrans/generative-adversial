@@ -1,190 +1,158 @@
 import tensorflow as tf
 import numpy as np
-import cPickle
-from random import randint
+from ops import *
+from utils import *
 import os
-from scipy.misc import imsave
-from utils import batch_norm
+import time
+from glob import glob
+from scipy.misc import imsave as ims
+from random import randint
 
+cifar = True
 
+def discriminator(image, reuse=False):
+    if reuse:
+            tf.get_variable_scope().reuse_variables()
 
-batchsize = 50
-droprate = 0.9
-iterations = 10000
-updates = 2
-d_learnrate = 0.0002
-g_learnrate = 0.0002
-beta = 0.5
+    if cifar:
+        h0 = lrelu(conv2d(image, 3, df_dim, name='d_h0_conv')) #16x16x64
+        h1 = lrelu(d_bn1(conv2d(h0, df_dim, df_dim*2, name='d_h1_conv'))) #8x8x128
+        h2 = lrelu(d_bn2(conv2d(h1, df_dim*2, df_dim*4, name='d_h2_conv'))) #4x4x256
+        h4 = dense(tf.reshape(h2, [batchsize, -1]), 4*4*df_dim*4, 1, scope='d_h3_lin')
+        return tf.nn.sigmoid(h4), h4
+    else:
+        h0 = lrelu(conv2d(image, 3, df_dim, name='d_h0_conv'))
+        h1 = lrelu(d_bn1(conv2d(h0, 64, df_dim*2, name='d_h1_conv')))
+        h2 = lrelu(d_bn2(conv2d(h1, 128, df_dim*4, name='d_h2_conv')))
+        h3 = lrelu(d_bn3(conv2d(h2, 256, df_dim*8, name='d_h3_conv')))
+        h4 = dense(tf.reshape(h3, [batchsize, -1]), 4*4*512, 1, scope='d_h3_lin')
+        return tf.nn.sigmoid(h4), h4
 
+def generator(z):
+    if cifar:
+        z2 = dense(z, z_dim, 4*4*gf_dim*4, scope='g_h0_lin')
+        h0 = tf.nn.relu(g_bn0(tf.reshape(z2, [-1, 4, 4, gf_dim*4]))) # 4x4x256
+        h1 = tf.nn.relu(g_bn1(conv_transpose(h0, [batchsize, 8, 8, gf_dim*2], "g_h1"))) #8x8x128
+        h2 = tf.nn.relu(g_bn2(conv_transpose(h1, [batchsize, 16, 16, gf_dim*1], "g_h2"))) #16x16x64
+        h4 = conv_transpose(h2, [batchsize, 32, 32, 3], "g_h4")
+        return tf.nn.tanh(h4)
+    else:
+        z2 = dense(z, z_dim, gf_dim*8*4*4, scope='g_h0_lin')
+        h0 = tf.nn.relu(g_bn0(tf.reshape(z2, [-1, 4, 4, gf_dim*8])))
+        h1 = tf.nn.relu(g_bn1(conv_transpose(h0, [batchsize, 8, 8, gf_dim*4], "g_h1")))
+        h2 = tf.nn.relu(g_bn2(conv_transpose(h1, [batchsize, 16, 16, gf_dim*2], "g_h2")))
+        h3 = tf.nn.relu(g_bn3(conv_transpose(h2, [batchsize, 32, 32, gf_dim*1], "g_h3")))
+        h4 = conv_transpose(h3, [batchsize, 64, 64, 3], "g_h4")
+        return tf.nn.tanh(h4)
 
-# extracting data
-def unpickle(file):
-  fo = open(file, 'rb')
-  dict = cPickle.load(fo)
-  fo.close()
-  return dict
-
-# helper functions for defining the model
-def initWeight(shape, name):
-    return tf.get_variable(name,shape,initializer=tf.random_normal_initializer(stddev=0.05))
-# start with 0.1 so reLu isnt always 0
-def initBias(shape, name):
-    return tf.get_variable(name,shape,initializer=tf.constant_initializer(0.1))
-
-
-def discriminator(imagein):
-    d_convweight1 = initWeight([5,5,3,32],"d_convweight1")
-    d_convweight2 = initWeight([5,5,32,64],"d_convweight2")
-    d_convweight3 = initWeight([5,5,64,128],"d_convweight3")
-
-    d_convbias1 = initBias([32],"d_convbias1")
-    d_convbias2 = initBias([64],"d_convbias2")
-    d_convbias3 = initBias([128],"d_convbias3")
-
-    d_fcweight1 = initWeight([8*8*128, 1],"d_fcweight1")
-
-    d_fcbias1 = initBias([1],"d_fcbias1")
+with tf.Session() as sess:
+    batchsize = 64
+    iscrop = True
+    imagesize = 108
+    imageshape = [64, 64, 3]
+    if cifar:
+        imageshape = [32, 32, 3]
+    z_dim = 100
+    gf_dim = 64
+    df_dim = 64
+    if cifar:
+        gf_dim = 32
+        df_dim = 32
+    gfc_dim = 1024
+    dfc_dim = 1024
+    c_dim = 3
+    learningrate = 0.0002
+    beta1 = 0.5
+    dataset = "celebA"
 
     d_bn1 = batch_norm(name='d_bn1')
     d_bn2 = batch_norm(name='d_bn2')
     d_bn3 = batch_norm(name='d_bn3')
 
-    conv1 = tf.nn.conv2d(imagein,d_convweight1,strides=[1,1,1,1],padding="SAME")
-    relu1 = tf.nn.relu(d_bn1(conv1 + d_convbias1))
-    conv2 = tf.nn.conv2d(relu1,d_convweight2,strides=[1,2,2,1],padding="SAME") #32x32 -> 16x16
-    relu2 = tf.nn.relu(d_bn2(conv2 + d_convbias2))
-    conv3 = tf.nn.conv2d(relu2,d_convweight3,strides=[1,2,2,1],padding="SAME") #16x16 -> 8x8
-    relu3 = tf.nn.relu(d_bn3(conv3 + d_convbias3))
-    dropout1 = tf.nn.dropout(relu3,droprate)
-    flattened = tf.reshape(dropout1, [-1, 8*8*128])
-    fc1 = tf.matmul(flattened, d_fcweight1) + d_fcbias1
-    y = tf.nn.sigmoid(fc1)
-    return y, fc1
-
-def generator():
-    g_fcweight1 = initWeight([100, 4*4*512],"g_fcweight1")
-    g_fcbias1 = initBias([4*4*512],"g_fcbias1")
-
-    g_convweight1 = initWeight([5,5,256,512],"g_convweight1")
-    g_convweight2 = initWeight([5,5,128,256],"g_convweight2")
-    g_convweight3 = initWeight([5,5,3,128],"g_convweight3")
-
-    g_convbias1 = initBias([256],"g_convbias1")
-    g_convbias2 = initBias([128],"g_convbias2")
-    g_convbias3 = initBias([3],"g_convbias3")
-
+    g_bn0 = batch_norm(name='g_bn0')
     g_bn1 = batch_norm(name='g_bn1')
     g_bn2 = batch_norm(name='g_bn2')
     g_bn3 = batch_norm(name='g_bn3')
 
-    noise = tf.random_uniform([batchsize, 100], -1, 1)
-    fc1 = tf.matmul(noise, g_fcweight1)
-    relu1 = tf.nn.relu(fc1 + g_fcbias1)
-    fattened = g_bn1(tf.reshape(relu1,[batchsize, 4, 4, 512]))
-    convt1 = tf.nn.conv2d_transpose(fattened, g_convweight1, [batchsize, 8, 8, 256], [1,2,2,1])
-    relu2 = tf.nn.relu(g_bn2(convt1 + g_convbias1))
-    convt2 = tf.nn.conv2d_transpose(relu2, g_convweight2, [batchsize, 16, 16, 128], [1,2,2,1])
-    relu3 = tf.nn.relu(g_bn3(convt2 + g_convbias2))
-    convt3 = tf.nn.conv2d_transpose(relu3, g_convweight3, [batchsize, 32, 32, 3], [1,2,2,1])
-    sigmoid1 = tf.nn.sigmoid(convt3 + g_convbias3)
-    return sigmoid1;
+    # build model
+    images = tf.placeholder(tf.float32, [batchsize] + imageshape, name="real_images")
+    zin = tf.placeholder(tf.float32, [None, z_dim], name="z")
+    G = generator(zin)
+    D_prob, D_logit = discriminator(images)
 
+    D_fake_prob, D_fake_logit = discriminator(G, reuse=True)
 
+    d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(D_logit, tf.ones_like(D_logit)))
+    d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(D_fake_logit, tf.zeros_like(D_fake_logit)))
 
-
-def train(mode):
-
-    # prepare real data
-    batch = unpickle("cifar-10-batches-py/data_batch_1")
-
-
-    imagein = tf.placeholder("float",[batchsize,32,32,3])
-
-    with tf.variable_scope("model"):
-        # discriminator called on real data
-        preal, hreal = discriminator(imagein)
-        # discriminator called on generated images
-        g = generator()
-    # want to reuse same discriminator variables
-    with tf.variable_scope("model", reuse=True):
-        pfake, hfake = discriminator(g)
-
-    # parameters to train on for each respective update
-    params = tf.trainable_variables()
-    d_params = [var for var in params if 'd_' in var.name]
-    g_params = [var for var in params if 'g_' in var.name]
-    print "params are"
-    print [var.name for var in d_params]
-
-    d_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(hreal, tf.ones_like(hreal)))
-    d_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(hfake, tf.zeros_like(hfake)))
-    gloss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(hfake, tf.ones_like(hfake)))
+    gloss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(D_fake_logit, tf.ones_like(D_fake_logit)))
     dloss = d_loss_real + d_loss_fake
 
+    t_vars = tf.trainable_variables()
+    d_vars = [var for var in t_vars if 'd_' in var.name]
+    g_vars = [var for var in t_vars if 'g_' in var.name]
 
-    # d_loss_real2 = tf.reduce_mean(tf.nn.relu(preal) - preal + tf.log(1.0 + tf.exp(-tf.abs(preal))))
-    # d_loss_fake2 = tf.reduce_mean(tf.nn.relu(pfake) + tf.log(1.0 + tf.exp(-tf.abs(pfake))))
-    # gloss = tf.reduce_mean(tf.nn.relu(d2) - d2 + tf.log(1.0 + tf.exp(-tf.abs(d2))))
+    data = None
+    batch = None
+    if cifar:
+        batch = unpickle("cifar-10-batches-py/data_batch_1")
+    else:
+        data = glob(os.path.join("./data", dataset, "*.jpg"))
 
-    doptimizer = tf.train.AdamOptimizer(d_learnrate, beta1=beta).minimize(dloss, var_list=d_params)
-    goptimizer = tf.train.AdamOptimizer(g_learnrate, beta1=beta).minimize(gloss, var_list=g_params)
+    d_optim = tf.train.AdamOptimizer(learningrate, beta1=beta1).minimize(dloss, var_list=d_vars)
+    g_optim = tf.train.AdamOptimizer(learningrate, beta1=beta1).minimize(gloss, var_list=g_vars)
+    tf.initialize_all_variables().run()
 
     saver = tf.train.Saver(max_to_keep=10)
 
+    counter = 1
+    start_time = time.time()
 
-    with tf.Session() as sess:
-        sess.run(tf.initialize_all_variables())
+    train = False
+    if train:
+        for epoch in xrange(10):
+            batch_idx = 30000 if cifar else len(data)
+            for idx in xrange(batch_idx):
+                batch_images = None
+                if cifar:
+                    batchnum = randint(0,150)
+                    trainingData = batch["data"][batchnum*batchsize:(batchnum+1)*batchsize]
+                    trainingData = transform(trainingData, is_crop=False)
+                    batch_images = np.reshape(trainingData,(batchsize,3,32,32))
+                    batch_images = np.swapaxes(batch_images,1,3)
+                else:
+                    batch_files = data[idx*batchsize:(idx+1)*batchsize]
+                    batch = [get_image(batch_file, imagesize, is_crop=iscrop) for batch_file in batch_files]
+                    batch_images = np.array(batch).astype(np.float32)
 
-        if mode == "train":
-            for i in xrange(iterations):
-                for k in xrange(updates):
-                    randomint = randint(0,10000 - batchsize - 1)
-                    trainingData = batch["data"][randomint:batchsize+randomint]
-                    rawlabel = batch["labels"][randomint:batchsize+randomint]
-                    trainingLabel = np.zeros((batchsize,10))
-                    trainingLabel[np.arange(batchsize),rawlabel] = 1
-                    trainingData = trainingData/255.0
-                    trainingData = np.reshape(trainingData,(batchsize,32,32,3))
+                batch_z = np.random.uniform(-1, 1, [batchsize, z_dim]).astype(np.float32)
 
-                    doptimizer.run(feed_dict= {imagein: trainingData})
+                for k in xrange(1):
+                    sess.run([d_optim],feed_dict={ images: batch_images, zin: batch_z })
+                for k in xrange(1):
+                    sess.run([g_optim],feed_dict={ zin: batch_z })
 
-                    if i % 50 == 0:
-                        dd = dloss.eval(feed_dict= {imagein: trainingData})
-                        print dd
-                    # dloss += dloss_delta
-                    if k % 100 == 0:
-                        print i
+                errD_fake = d_loss_fake.eval({zin: batch_z})
+                errD_real = d_loss_real.eval({images: batch_images})
+                errG = gloss.eval({zin: batch_z})
 
-                goptimizer.run()
-                # print "i: " + str(i)
+                counter += 1
+                print("Epoch: [%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
+                    % (epoch, idx, batch_idx,
+                        time.time() - start_time, errD_fake+errD_real, errG))
 
-
-
-                if i % 100 == 0:
-                    saver.save(sess, os.getcwd()+"/training/train", global_step=i)
-                    data = g.eval()
-                    imsave(str(i)+".jpg",data[0])
-                # _, gloss_delta = goptimizer.run()
-                # gloss += gloss_delta
-        else:
-            saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
-            data = g.eval()
-            imsave(str(i)+".jpg",data)
-
-
-
-#
-# def display():
-#     sess = tf.InteractiveSession()
-#     sess.run(tf.initialize_all_variables())
-#     g = generator()
-#     d2 = discriminator(g)
-#     saver = tf.train.Saver()
-#     saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
-
-
-
-
-# display()
-
-train("train")
+                if counter % 2000 == 0:
+                    sdata = sess.run([G],feed_dict={ zin: batch_z })
+                    print np.shape(sdata)
+                    ims("tests2/"+str(counter)+".jpg",merge(sdata[0],[8,8]))
+                if counter % 4000 == 0:
+                    saver.save(sess, os.getcwd()+"/training/train",global_step=counter)
+    else:
+        saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
+        batch_z = np.random.uniform(-1, 1, [1, z_dim]).astype(np.float32)
+        batch_z = np.repeat(batch_z, batchsize, axis=0)
+        for i in xrange(z_dim):
+            edited = np.copy(batch_z)
+            edited[:,i] = (np.arange(0.0, batchsize) / (batchsize/2)) - 1
+            sdata = sess.run([G],feed_dict={ zin: edited })
+            ims("ztests/"+str(i)+".jpg",merge(sdata[0],[8,8]))
