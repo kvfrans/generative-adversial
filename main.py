@@ -8,7 +8,7 @@ from glob import glob
 from scipy.misc import imsave as ims
 from random import randint
 
-cifar = True
+cifar = False
 
 def discriminator(image, reuse=False):
     if reuse:
@@ -47,7 +47,7 @@ def generator(z):
 
 with tf.Session() as sess:
     batchsize = 64
-    iscrop = True
+    iscrop = False
     imagesize = 108
     imageshape = [64, 64, 3]
     if cifar:
@@ -63,7 +63,7 @@ with tf.Session() as sess:
     c_dim = 3
     learningrate = 0.0002
     beta1 = 0.5
-    dataset = "celebA"
+    dataset = "imagenet"
 
     d_bn1 = batch_norm(name='d_bn1')
     d_bn2 = batch_norm(name='d_bn2')
@@ -97,7 +97,8 @@ with tf.Session() as sess:
     if cifar:
         batch = unpickle("cifar-10-batches-py/data_batch_1")
     else:
-        data = glob(os.path.join("./data", dataset, "*.jpg"))
+        data = glob(os.path.join("./data", dataset, "*.JPEG"))
+        print len(data)
 
     d_optim = tf.train.AdamOptimizer(learningrate, beta1=beta1).minimize(dloss, var_list=d_vars)
     g_optim = tf.train.AdamOptimizer(learningrate, beta1=beta1).minimize(gloss, var_list=g_vars)
@@ -108,10 +109,11 @@ with tf.Session() as sess:
     counter = 1
     start_time = time.time()
 
-    train = False
+    train = True
     if train:
+        saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
         for epoch in xrange(10):
-            batch_idx = 30000 if cifar else len(data)
+            batch_idx = 30000 if cifar else (len(data)/batchsize)-2
             for idx in xrange(batch_idx):
                 batch_images = None
                 if cifar:
@@ -122,8 +124,8 @@ with tf.Session() as sess:
                     batch_images = np.swapaxes(batch_images,1,3)
                 else:
                     batch_files = data[idx*batchsize:(idx+1)*batchsize]
-                    batch = [get_image(batch_file, imagesize, is_crop=iscrop) for batch_file in batch_files]
-                    batch_images = np.array(batch).astype(np.float32)
+                    batchim = [get_image(batch_file, [64,64,3], is_crop=False) for batch_file in batch_files]
+                    batch_images = np.array(batchim).astype(np.float32)
 
                 batch_z = np.random.uniform(-1, 1, [batchsize, z_dim]).astype(np.float32)
 
@@ -132,20 +134,24 @@ with tf.Session() as sess:
                 for k in xrange(1):
                     sess.run([g_optim],feed_dict={ zin: batch_z })
 
-                errD_fake = d_loss_fake.eval({zin: batch_z})
-                errD_real = d_loss_real.eval({images: batch_images})
-                errG = gloss.eval({zin: batch_z})
+
 
                 counter += 1
-                print("Epoch: [%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
+                print("Epoch: [%2d] [%4d/%4d] time: %4.4f, " \
                     % (epoch, idx, batch_idx,
-                        time.time() - start_time, errD_fake+errD_real, errG))
+                        time.time() - start_time,))
 
-                if counter % 2000 == 0:
+                if counter % 200 == 0:
                     sdata = sess.run([G],feed_dict={ zin: batch_z })
                     print np.shape(sdata)
-                    ims("tests2/"+str(counter)+".jpg",merge(sdata[0],[8,8]))
-                if counter % 4000 == 0:
+                    ims("results/imagenet/"+str(counter)+".jpg",merge(sdata[0],[8,8]))
+                    errD_fake = d_loss_fake.eval({zin: batch_z})
+                    errD_real = d_loss_real.eval({images: batch_images})
+                    errG = gloss.eval({zin: batch_z})
+                    print errD_real + errD_fake
+                    print errG
+                    # print("errd: %4.4f errg: $4")
+                if counter % 1000 == 0:
                     saver.save(sess, os.getcwd()+"/training/train",global_step=counter)
     else:
         saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
