@@ -109,9 +109,16 @@ with tf.Session() as sess:
     counter = 1
     start_time = time.time()
 
+    display_z = np.random.uniform(-1, 1, [batchsize, z_dim]).astype(np.float32)
+
+    realfiles = data[0:64]
+    realim = [get_image(batch_file, [64,64,3], is_crop=False) for batch_file in realfiles]
+    real_img = np.array(realim).astype(np.float32)
+    ims("results/imagenet/real.jpg",merge(real_img,[8,8]))
+
     train = True
     if train:
-        saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
+        # saver.restore(sess, tf.train.latest_checkpoint(os.getcwd()+"/training/"))
         for epoch in xrange(10):
             batch_idx = 30000 if cifar else (len(data)/batchsize)-2
             for idx in xrange(batch_idx):
@@ -142,10 +149,10 @@ with tf.Session() as sess:
                         time.time() - start_time,))
 
                 if counter % 200 == 0:
-                    sdata = sess.run([G],feed_dict={ zin: batch_z })
+                    sdata = sess.run([G],feed_dict={ zin: display_z })
                     print np.shape(sdata)
                     ims("results/imagenet/"+str(counter)+".jpg",merge(sdata[0],[8,8]))
-                    errD_fake = d_loss_fake.eval({zin: batch_z})
+                    errD_fake = d_loss_fake.eval({zin: display_z})
                     errD_real = d_loss_real.eval({images: batch_images})
                     errG = gloss.eval({zin: batch_z})
                     print errD_real + errD_fake
