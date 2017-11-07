@@ -17,5 +17,6 @@ Set `train = False` to visualize how adjusting the initial noise affects image g
 
 Set `cifar = True` to train on CIFAR. This sets the network to train on 32x32 images instead of 64x64, and reads from the CIFAR binaries rather than from JPEGS.
 
+To download the CIFAR dataset, just run `wget https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz` and `tar -xzvf cifar-10-python.tar.gz`
 
 Utils and network structure from [DCGAN-Tensorflow](https://github.com/carpedm20/DCGAN-tensorflow).
