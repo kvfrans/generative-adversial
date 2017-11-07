@@ -15,7 +15,7 @@ class batch_norm(object):
         shape = x.get_shape().as_list()
 
         if train:
-            with tf.variable_scope(self.name) as scope:
+            with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE) as scope:
                 self.beta = tf.get_variable("beta", [shape[-1]],
                                     initializer=tf.constant_initializer(0.))
                 self.gamma = tf.get_variable("gamma", [shape[-1]],
